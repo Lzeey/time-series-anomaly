@@ -1,0 +1,138 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Sun Aug 27 2017
+
+@author: lzeey
+This script contains the experiment of seq2seq RNN autoencoders
+"""
+import pandas as pd
+import numpy as np
+import random
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import StandardScaler
+from keras.layers import LSTM, Activation, Dense, Input, Flatten
+from keras.optimizers import RMSprop
+from keras.models import Model
+from statsmodels.tsa.stattools import adfuller
+
+import plotly as py
+import cufflinks as cf
+
+
+def plot_graph_wrapper(df, title='', xTitle='', yTitle='',
+                       filename='output.html'):
+    """Cufflink offline plot for easy viewing"""
+    cf.set_config_file(offline=True, world_readable=True, theme='ggplot')
+    cf_output = df.iplot(kind='scatter', title=title, xTitle=xTitle,
+                         online=False, asFigure=True)
+    py.offline.plot(cf_output, filename=filename)
+
+
+def lstm_anomaly_model(input_dtype='float32',
+                       input_dim=1, h_dim=64, out_dim=10, verbose=True):
+    """Create a stateful LSTM time-series anomaly detection model
+    input_dtype: Either 'int32' or 'float32'. Defined the numeric type for input
+    input_dim: Input time series dimension (number of input PER time bin)
+    h_dim: Dimension of hidden state in LSTM
+    out_dim: Number of look-ahead prediction step"""
+    # We take in only one timestep at a time
+    in_layer = Input(batch_shape=(1, 1, input_dim), dtype=input_dtype, name='input')
+    # Use stateful to remember state from previous batch
+    x = LSTM(h_dim, stateful=True, recurrent_dropout=0.2, name='LSTM', return_sequences=True)(in_layer)
+    x1 = LSTM(h_dim, stateful=True, recurrent_dropout=0.2, name='LSTM2')(x)
+    y = Dense(out_dim * input_dim)(x1)
+    model = Model(inputs=in_layer, outputs=y)
+    opt = RMSprop()
+    model.compile(loss='mse', optimizer=opt)
+    if verbose:
+        print(model.summary())
+    return model
+
+
+def time_series_anomaly(x_raw, look_ahead=10, iteration=1):
+    """Perform anomaly detection on time-series x
+    x: np.array of dimension (, n_dim), 0-th index is time,
+    and 1st index is for multi_dimension input"""
+    single_dim = False
+    if len(x_raw.shape) == 1:  # 1 dimensional time-series
+        input_dim = 1
+        x_raw = x_raw.reshape(-1, 1)
+        single_dim = True
+    elif len(x_raw.shape) == 2:  # Multi-dim time-series
+        input_dim = x_raw.shape[1]
+    else:
+        raise(Exception("Unexpected input shape. Expected 1 or 2 dimension. Received: {}".format(len(x_raw.shape))))
+    t_len = x_raw.shape[0]
+    x_raw = x_raw.astype(np.float32)
+    
+    #Perform normalization
+    scaler = StandardScaler()
+    x = scaler.fit_transform(x_raw)
+    model = lstm_anomaly_model(input_dim=input_dim,
+                                    h_dim=32, out_dim=look_ahead)
+    pred = np.zeros((t_len-look_ahead, input_dim, look_ahead), dtype=np.float32)
+    loss = None
+    for ep in range(iteration):
+        model.reset_states()
+        for i in range(t_len - look_ahead):  # Iterate through time-series
+            if i % 300 == 0:
+                print("It {} ({}/{}): Loss = {}"
+                      .format(ep, i, t_len-look_ahead, loss))
+            in_x = x[i].reshape((1, 1, input_dim))
+            out_x = x[i+1:i+1+look_ahead].reshape((1, -1))
+            #  We perform prediction THEN training.
+            #  No way to extract prediction during forward-pass of training
+            pred_x = model.predict(in_x)
+            loss = model.train_on_batch(in_x, out_x)
+            
+            #Save prediction
+            if ep == iteration - 1:
+                pred[i, :, :] = pred_x
+
+    pred_full = np.full((t_len, input_dim, look_ahead), np.nan, dtype=np.float32)
+    for i in range(look_ahead):  # Shift the time-frames forward
+        pred_full[i+1:i+1+t_len-look_ahead, :, i] = pred[:, :, i]
+    pred_full = scaler.inverse_transform(pred_full)
+    error = pred_full - x_raw.reshape((-1, input_dim, 1))
+    pred_mean = np.nanmean(pred_full, axis=2)
+    pred_dev = np.std(pred_full, axis=2)
+    if single_dim:
+        pred_full = pred_full.squeeze()
+        error = error.squeeze()
+        pred_mean = pred_mean.squeeze()
+        
+    output = {'pred_full': pred_full,
+              'pred': pred_mean,
+              'error': error,
+              'conf': pred_dev,
+              }
+    return output
+
+if __name__ == "__main__":
+    random.seed(1234)
+    np.random.seed(1234)    
+    df = pd.read_csv("power_data.txt")
+    df.columns = ['power']
+    date_range = pd.date_range('1/1/1997',periods=35039,freq='15Min')
+    
+    # Set date to df
+    df = pd.DataFrame(np.array(df['power']),index=date_range)
+    df.columns = ['power']
+    df = df.resample('2H').mean()
+    
+    output = time_series_anomaly(df.power.values, look_ahead=72)
+    
+    df['pred'] = output['pred']
+    plot_graph_wrapper(df, title="Prediction")
+
+    #Stationarity test
+    p_val = adfuller(df.power.values)
+    
+    # Split timeseries per week
+#    weeks = [g for n, g in df.groupby(pd.TimeGrouper('W'))]
+#    red_weeks = weeks[1:52]
+    
+    """
+    red_weeks[0:10,13:15,18,20:37,39] is normal
+    red_weeks[11:12,16:17,19,38,50] is anomaly
+    """
