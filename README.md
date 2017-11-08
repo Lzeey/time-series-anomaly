@@ -15,18 +15,18 @@ The stateful LSTM takes one input at the time and predict k time-steps ahead. Th
 
 Currently, the model works quite well on the power dataset, with 1 hour sampling (week seasonality of $7*24$ time-steps)
 
-![alt text](.../figures/lstm_1hr.png)
+![LSTM anomalies](/figures/lstm_1hr.png)
 
 but falls short when the seasonality gets too long (e.g. 30 Mins sampling with $7*2*24$)
 
-![alt text](.../figures/lstm_30mins.png)
+![LSTM anomlies 30mins](/figures/lstm_30mins.png)
 
 ### 1D Causal Convolution
 We use a wave-net like structure to capture patterns from very long timeseries.
 
 This is extremely fast (per epoch time of ~10s with GPU), but output can be easily thrown off with large anomalies. May need to rethink training strategy (cross-validation of some kind). Also, the anomalies does not feature as strongly as LSTM for now.
 
-![alt text](.../figures/wavenet_1hr_more_epochs.png)
+![Wavenet Anomalies](/figures/wavenet_1hr_more_epochs.png)
 
 Check out the .html plotly plots to see full results.
 ## Other similar detectors
