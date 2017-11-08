@@ -1,5 +1,4 @@
 # Time Series Anomaly Detection with Deep Learning
-Detecting Anomaly
 
 ## Intro
 The goal of this project is to design an assumption-free anomaly detection tool that can take in any time series data (one-dimensional for now) and flag out datapoints that are significantly higher/lower than usual.
