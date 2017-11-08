@@ -21,7 +21,7 @@ import cufflinks as cf
 
 
 def plot_graph_wrapper(df, title='', xTitle='', yTitle='',
-                       filename='output.html'):
+                       filename='LSTM_output.html'):
     """Cufflink offline plot for easy viewing"""
     cf.set_config_file(offline=True, world_readable=True, theme='ggplot')
     cf_output = df.iplot(kind='scatter', title=title, xTitle=xTitle,
@@ -30,7 +30,7 @@ def plot_graph_wrapper(df, title='', xTitle='', yTitle='',
     py.offline.plot(cf_output, filename=filename)
 
 def plot_timeseries_with_bound(df, val_col, bound_col, true_col, xTitle='', yTitle='',
-                       title='', filename='output.html'):
+                       title='', filename='LSTM_output_bounds.html'):
     cf.set_config_file(offline=True, world_readable=True, theme='ggplot')
 #    cf_output = df.iplot(kind='scatter', title=title, xTitle=xTitle,
 #                         online=False, asFigure=True)
@@ -113,7 +113,7 @@ def lstm_anomaly_model(input_dtype='float32',
     return model
 
 
-def time_series_anomaly(x_raw, look_ahead=10, epochs=2, layers=16, hidden_size=16):
+def time_series_anomaly(x_raw, look_ahead=16, epochs=2, layers=16, hidden_size=16):
     """Perform anomaly detection on time-series x
     x: np.array of dimension (, n_dim), 0-th index is time,
     and 1st index is for multi_dimension input"""
@@ -212,6 +212,8 @@ def automatic_seasonality_remover(x, k_components=10, verbose=True):
 if __name__ == "__main__":
     random.seed(1234)
     np.random.seed(1234)
+    sample_period = '1H' # '30Min'
+    
     df = pd.read_csv("power_data.txt")
     df.columns = ['power']
     date_range = pd.date_range('1/1/1997', periods=35039, freq='15Min')
@@ -219,7 +221,7 @@ if __name__ == "__main__":
     # Set date to df
     df = pd.DataFrame(np.array(df['power']),index=date_range)
     df.columns = ['power']
-    df = df.resample('2H').mean()
+    df = df.resample(sample_period).mean()
     
     #Transform into a delta problem
     df['season'] = automatic_seasonality_remover(df['power'].values)
